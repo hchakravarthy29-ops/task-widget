@@ -116,11 +116,22 @@ object Repo {
         return null
     }
 
+    private const val PREFS = "task_widget"
+    private const val KEY_SINCE = "trackingSinceEpochDay"
+
+    /** The first day the app synced with calendar access. Only tasks from then on can be delayed. */
+    fun trackingSince(ctx: Context, today: LocalDate = LocalDate.now(zone)): LocalDate {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_SINCE)) prefs.edit().putLong(KEY_SINCE, today.toEpochDay()).apply()
+        return LocalDate.ofEpochDay(prefs.getLong(KEY_SINCE, today.toEpochDay()))
+    }
+
     /** Stretches every undone, past-due task through today and marks it delayed. */
     fun sync(ctx: Context, today: LocalDate = LocalDate.now(zone)) {
         if (!hasPermission(ctx)) return
+        val since = trackingSince(ctx, today)
         for (item in queryRange(ctx, today)) {
-            val change = Rules.stretch(item, today) ?: continue
+            val change = Rules.stretch(item, today, since) ?: continue
             val v = ContentValues().apply {
                 put(CalendarContract.Events.TITLE, change.first)
                 put(CalendarContract.Events.DTEND, change.second)

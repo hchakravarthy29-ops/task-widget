@@ -74,12 +74,13 @@ class MainActivity : Activity() {
         status.text = "Reading your calendar…"
         val app = applicationContext
         CoroutineScope(Dispatchers.Main).launch {
-            val snap = withContext(Dispatchers.IO) {
+            val (snap, since) = withContext(Dispatchers.IO) {
                 Repo.sync(app)
-                Repo.load(app)
+                Repo.load(app) to Repo.trackingSince(app)
             }
             TaskWidget().updateAll(app)
-            status.text = "${snap.done} of ${snap.total} done today. Add the widget from your home screen: long-press, Widgets, Task Widget."
+            status.text = "${snap.done} of ${snap.total} done today. Tracking tasks from $since; older events are left as they are. " +
+                "Add the widget from your home screen: long-press, Widgets, Task Widget."
             list.text = snap.active.joinToString("\n\n") { i ->
                 val p = i.parsed
                 val tag = when (p.kind) {

@@ -113,12 +113,17 @@ object Rules {
         return Slot(begin, begin + maxOf(length, 15 * 60 * 1000L), allDay = false)
     }
 
-    /** The title and end time after the nightly stretch, or null when nothing changes. */
-    fun stretch(item: Item, today: LocalDate): Pair<String, Long>? {
+    /**
+     * The title and end time after the nightly stretch, or null when nothing changes.
+     * Events that ended before [since] (the day the app was first used) are left alone, so
+     * installing the app does not turn months of old calendar events into delayed tasks.
+     */
+    fun stretch(item: Item, today: LocalDate, since: LocalDate = LocalDate.MIN): Pair<String, Long>? {
         if (item.recurring) return null
         val p = item.parsed
         if (p.kind == Kind.DONE) return null
         val endDay = item.endDay
+        if (endDay.isBefore(since)) return null
         if (!endDay.isBefore(today)) return null
         val late = ChronoUnit.DAYS.between(endDay, today).toInt()
         val title = when (p.kind) {

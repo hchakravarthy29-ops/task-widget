@@ -165,6 +165,35 @@ class RulesTest {
         assertNull(Rules.stretch(timed("✅ DONE – Old", at(10, 9), at(10, 10)), today))
     }
 
+    // ----- tracking starts on install day -----
+
+    @Test
+    fun eventsEndedBeforeInstallDayAreLeftAlone() {
+        val installed = LocalDate.of(2026, 11, 14)
+        val oldMeeting = timed("Team meeting", LocalDateTime.of(2026, 10, 2, 10, 0), LocalDateTime.of(2026, 10, 2, 11, 0))
+        val yesterday = allDay("Birthday", LocalDate.of(2026, 11, 13))
+        assertNull(Rules.stretch(oldMeeting, today, since = installed))
+        assertNull(Rules.stretch(yesterday, today, since = installed))
+    }
+
+    @Test
+    fun tasksFromInstallDayOnAreStillDelayed() {
+        val installed = LocalDate.of(2026, 11, 14)
+        val item = timed("Call bank", LocalDateTime.of(2026, 11, 14, 10, 0), LocalDateTime.of(2026, 11, 14, 11, 0))
+        val nextDay = LocalDate.of(2026, 11, 15)
+        val s = item.after(Rules.stretch(item, nextDay, since = installed))
+        assertEquals("⌛ DELAYED +1 – Call bank", s.title)
+        // Once stretched it ends on or after install day, so it keeps growing.
+        assertEquals("⌛ DELAYED +2 – Call bank", s.after(Rules.stretch(s, nextDay.plusDays(1), since = installed)).title)
+    }
+
+    @Test
+    fun eventRunningAcrossInstallDayIsTracked() {
+        val installed = LocalDate.of(2026, 11, 13)
+        val trip = allDay("Pack for trip", LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 13))
+        assertEquals("⌛ DELAYED +1 – Pack for trip", trip.after(Rules.stretch(trip, today, since = installed)).title)
+    }
+
     // ----- follow-up -----
 
     @Test
