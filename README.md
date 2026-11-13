@@ -16,6 +16,8 @@ The calendar icon opens the event in Google Calendar.
 
 ## Install
 
+To check everything works after installing, follow [TESTING.md](TESTING.md).
+
 1. Open the latest run under the Actions tab and download the `task-widget-debug-apk` artifact.
 2. Unzip, copy `app-debug.apk` to the phone, and install it (allow installs from your file manager if asked).
 3. Open the app once and allow calendar and notification access.
