@@ -32,6 +32,7 @@
             android:name=".ActionActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <receiver

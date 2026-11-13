@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.currentState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,17 +64,37 @@ private data class TData(
     val dot: Color,
 )
 
+private val RefreshKey = longPreferencesKey("refresh")
+
+private fun syncAndLoad(context: Context): Snapshot {
+    Repo.sync(context)
+    return Repo.load(context)
+}
+
 class TaskWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = withContext(Dispatchers.IO) {
-            Repo.sync(context)
-            Repo.load(context)
-        }
-        val rows = snap.active.map { toRow(it) }
-        val dateText = snap.today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
+        val first = withContext(Dispatchers.IO) { syncAndLoad(context) }
         provideContent {
+            // Glance keeps a widget's session alive for a while after an update, and a further
+            // update() then only recomposes. Reading RefreshKey here makes refreshWidgets()
+            // reload the calendar even when the session is still running.
+            val token = currentState(RefreshKey)
+            val snap by produceState(first, token) {
+                value = withContext(Dispatchers.IO) { syncAndLoad(context) }
+            }
+            val rows = snap.active.map { toRow(it) }
+            val dateText = snap.today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
             Content(context, snap, rows, dateText)
         }
+    }
+}
+
+/** Reloads every Task Widget from the calendar. Use this instead of updateAll. */
+suspend fun refreshWidgets(context: Context) {
+    val widget = TaskWidget()
+    for (id in GlanceAppWidgetManager(context).getGlanceIds(TaskWidget::class.java)) {
+        updateAppWidgetState(context, id) { it[RefreshKey] = System.nanoTime() }
+        widget.update(context, id)
     }
 }
 
@@ -124,7 +150,8 @@ private fun Content(context: Context, snap: Snapshot, rows: List<TData>, dateTex
                 style = TextStyle(color = ColorProvider(MUTED), fontSize = 13.sp)
             )
             else -> LazyColumn {
-                items(rows, itemId = { it.id }) { r -> TaskRow(context, r) }
+                // No itemId: a repeating event can appear twice in a day with the same event id.
+                items(rows) { r -> TaskRow(context, r) }
             }
         }
     }

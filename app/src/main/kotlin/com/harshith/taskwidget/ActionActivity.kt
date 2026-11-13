@@ -10,7 +10,6 @@ import android.os.Looper
 import android.text.InputType
 import android.widget.EditText
 import android.widget.Toast
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,7 +50,17 @@ class ActionActivity : Activity() {
             finish()
             return
         }
-        if (intent.getBooleanExtra(EXTRA_DONE_NOW, false)) doneWithUndo() else showMain(task)
+        if (intent.getBooleanExtra(EXTRA_DONE_NOW, false)) {
+            if (task.parsed.kind == Kind.DONE) {
+                // e.g. a second quick tap before the widget redrew.
+                Toast.makeText(this, "Already marked done", Toast.LENGTH_SHORT).show()
+                finish()
+                return
+            }
+            doneWithUndo()
+        } else {
+            showMain(task)
+        }
     }
 
     override fun onDestroy() {
@@ -68,7 +77,7 @@ class ActionActivity : Activity() {
         val app = applicationContext
         CoroutineScope(Dispatchers.Main).launch {
             val before = withContext(Dispatchers.IO) { Repo.markDone(app, eventId) }
-            TaskWidget().updateAll(app)
+            refreshWidgets(app)
             if (before == null) {
                 Toast.makeText(app, "Couldn't mark it done", Toast.LENGTH_SHORT).show()
                 finish()
@@ -92,7 +101,7 @@ class ActionActivity : Activity() {
         val app = applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             Repo.undoDone(app, before)
-            TaskWidget().updateAll(app)
+            refreshWidgets(app)
         }
         finish()
     }
@@ -116,7 +125,7 @@ class ActionActivity : Activity() {
     private fun perform(block: () -> Unit) {
         CoroutineScope(Dispatchers.IO).launch {
             block()
-            TaskWidget().updateAll(applicationContext)
+            refreshWidgets(applicationContext)
         }
         finish()
     }

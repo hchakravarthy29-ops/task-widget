@@ -10,7 +10,6 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,7 +77,7 @@ class MainActivity : Activity() {
                 Repo.sync(app)
                 Repo.load(app) to Repo.trackingSince(app)
             }
-            TaskWidget().updateAll(app)
+            refreshWidgets(app)
             status.text = "${snap.done} of ${snap.total} done today. Tracking tasks from $since; older events are left as they are. " +
                 "Add the widget from your home screen: long-press, Widgets, Task Widget."
             list.text = snap.active.joinToString("\n\n") { i ->

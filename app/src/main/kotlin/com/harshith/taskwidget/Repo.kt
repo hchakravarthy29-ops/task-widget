@@ -204,7 +204,8 @@ object Repo {
      */
     fun markDone(ctx: Context, id: Long, today: LocalDate = LocalDate.now(zone)): Item? {
         val item = getItem(ctx, id) ?: return null
-        if (item.recurring) return null
+        // Already done: changing nothing keeps any Undo pointing at the real earlier state.
+        if (item.recurring || item.parsed.kind == Kind.DONE) return null
         val (title, end) = Rules.done(item, today)
         val v = ContentValues().apply {
             put(CalendarContract.Events.TITLE, title)

@@ -1,6 +1,18 @@
 # Handoff for Claude Code: Task Widget
 
-Owner: Harshith (Galaxy S24 Ultra, Android 14+). Written 14 Nov 2026 by Claude in chat. The code in this repo has never been compiled or run. Your first job is to make it build and then verify behaviour.
+Owner: Harshith (Galaxy S24 Ultra, Android 14+). Not a programmer: explain in plain words, no jargon.
+First written 14 Nov 2026 by Claude in chat; updated 14 Nov 2026 by Claude Code (see "Status").
+
+## Status (14 Nov 2026)
+
+- Builds and unit tests pass in GitHub Actions on every push. There is no Android SDK on Harshith's PC,
+  so CI is the compiler: push to a temporary branch, check the run, then push `main` and delete the branch.
+- Each `main` build is published to the rolling release `latest-build`. Phone download link:
+  https://github.com/hchakravarthy29-ops/task-widget/releases/latest/download/app-debug.apk
+- Builds are signed with the committed `debug.keystore` (on purpose, not secret) so updates install over the top.
+- **Nothing has run on a real device yet.** Harshith is about to install and follow `TESTING.md`
+  (day 1 checks, then day 2 and day 3 mornings). Next session: ask how testing went and fix what failed.
+- Local copy: `D:\Task widget\task-widget`.
 
 Do not use APEX or multi-agent orchestration. Keep the work direct and proportionate.
 
@@ -31,31 +43,47 @@ A dark Android home-screen widget that shows today's Google Calendar tasks, with
 - `Model.kt`: title prefix parsing and building, `Item`, and the pure rules (`Rules.stretch`, ordering, active and done-today tests). Easy to unit test with JUnit; there are no tests yet. Add them.
 - `Repo.kt`: all `CalendarContract` reads and writes, sync (stretch), and the four actions.
 - `Reminders.kt`: AlarmManager scheduling, notification channel, `ReminderReceiver`.
-- `TaskWidget.kt`: Glance 1.1.0 widget, `DoneAction` callback, receiver.
-- `ActionActivity.kt`: translucent activity that shows the action dialogs.
-- `MainActivity.kt`: permissions and a plain status and list screen.
-- `.github/workflows/build.yml`: builds `assembleDebug` on every push and uploads the APK artifact. There is no Gradle wrapper yet. The workflow installs Gradle 8.7. Add the wrapper if you can generate it.
+- `TaskWidget.kt`: Glance 1.1.0 widget and receiver. Always refresh with `refreshWidgets(context)`,
+  not `updateAll`: it bumps a state key the composition reads, so a still-running Glance session
+  reloads the calendar instead of only recomposing stale data.
+- `ActionActivity.kt`: translucent activity for the action dialogs and the Done + Undo popup
+  (`EXTRA_DONE_NOW`, from the widget's circle).
+- `MainActivity.kt`: permissions and a plain status and list screen (shows the tracking start day).
+- `Reminders.kt`: also `BootReceiver`; reminders are saved in SharedPreferences and re-set after
+  reboot or app update. A reminder whose task is done or deleted is skipped.
+- Tests: `app/src/test/kotlin/...` (`TitlesTest`, `RulesTest`, `MeetingTest`). Run in CI via `./gradlew testDebugUnitTest`.
+- `.github/workflows/build.yml`: tests, `assembleDebug`, artifact upload, and the `latest-build` release on `main`.
 
-Stack: AGP 8.5.2, Kotlin 1.9.24, Compose compiler 1.5.14, compileSdk and targetSdk 34, minSdk 26, Glance 1.1.0.
+Stack: AGP 8.5.2, Kotlin 1.9.24, Compose compiler 1.5.14, compileSdk and targetSdk 34, minSdk 26, Glance 1.1.0, Gradle wrapper 8.7.
 
-## Known risks to check first
+## Decisions added with Harshith (14 Nov)
 
-1. Compile errors. Glance API signatures were written from memory (`LinearProgressIndicator`, `LazyColumn` `items(itemId = ...)`, `ColorProvider(Color)`, `ColorFilter.tint`, `cornerRadius`, `actionRunCallback`). Fix whatever the compiler reports.
-2. The widget's `initialLayout` is `@layout/glance_default_loading_layout`, which ships with Glance. Confirm it resolves.
-3. `Repo.sync` runs inside `provideGlance` on every widget update. Confirm it does not loop: updating events fires calendar change notifications, but nothing observes them. Updates come from the 30-minute `updatePeriodMillis`, the app opening and action callbacks.
-4. Stretch maths for timed events, DST and all-day UTC handling (`Item.dayOf`, `Rules.endThrough`). Write unit tests for: a task one day late, three days late, a delayed task then done, a follow-up carrying over, all-day vs timed, and reschedule.
-5. Converting an all-day event to timed (Later today and Reschedule with a time) sets `ALL_DAY=0`, `EVENT_TIMEZONE` and `DTSTART`/`DTEND`. Check that the provider accepts the update, and add the alert reminder only when it does.
-6. The "Mark done" circle is easy to tap by accident. Consider an undo (title edit back) if it proves a problem.
-7. Alarms set with `setAndAllowWhileIdle` do not survive a reboot. A boot receiver could reschedule from follow-up events.
-8. `POST_NOTIFICATIONS` is requested from `MainActivity` only.
+- Only events that end on or after the first day the app synced are tracked (`Repo.trackingSince`),
+  so installing doesn't turn old events into DELAYED tasks.
+- Meetings are left out completely: someone else organised it, or a guest other than you is invited
+  (rooms don't count). `Rules.isMeeting`; "you" = calendar owner address or its Google account.
+- Done shows a 6-second "Marked done" popup with Undo (restores title and end time).
+- Status parsing accepts U+FE0F after the emoji and ⏳ as well as ⌛.
+
+## Unverified on a device (check during or after Harshith's testing)
+
+1. Glance refresh (`refreshWidgets` with `currentState` + `produceState`) actually redraws right
+   after Done/Undo. If it doesn't, the task stays on the widget until the next 30-minute refresh.
+2. All-day to timed conversion (Later today, Reschedule with a time) is accepted by the provider.
+3. Meeting detection against real Google data (ORGANIZER / OWNER_ACCOUNT / attendee rows).
+4. Reminders after a reboot (`BootReceiver`), and how late `setAndAllowWhileIdle` fires on Samsung.
+5. The "Open in Google Calendar" intent (`content://com.android.calendar/events/<id>`).
+
+## Small known rough edges (not fixed)
+
+- "This evening (6 PM)" is offered after 6 PM and moves the task into the past.
+- The Reschedule time dialog title shows the date as ISO (`2026-11-15`).
+- `POST_NOTIFICATIONS` is requested from `MainActivity` only.
 
 ## Next steps
 
-1. Get `gradle assembleDebug` passing. Fix compile errors with minimal changes.
-2. Add JUnit tests for `Model.kt` rules and `Titles` parsing.
-3. If an emulator or device is available, test with real calendar events: all-day, timed, delayed, follow-up, done.
-4. Commit on `main` (this repo has no protected branches), push, and check the Actions run. Harshith installs the artifact `task-widget-debug-apk`.
-5. Then, if time allows: widget look and feel, a boot receiver for reminders, an undo for done, and a full-screen list in `MainActivity`.
+1. Fix whatever Harshith reports from `TESTING.md`.
+2. Then: a style round for the widget, and a full-screen list in `MainActivity`.
 
 ## Out of scope for you
 
