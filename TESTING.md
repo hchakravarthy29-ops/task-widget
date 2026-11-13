@@ -9,17 +9,17 @@ Meetings (events with other guests, or invitations from others) never show up an
 
 ## 1. Install (once)
 
-1. On your phone, open github.com/hchakravarthy29-ops/task-widget and sign in.
-2. Tap **Actions**, open the newest run with a green tick, scroll to **Artifacts**, and download
-   **task-widget-debug-apk**.
-3. Open the downloaded zip and tap **app-debug.apk**.
+1. On your phone, open this link in **Chrome** (no sign-in needed):
+   https://github.com/hchakravarthy29-ops/task-widget/releases/latest/download/app-debug.apk
+   It downloads **app-debug.apk** straight away.
+2. Tap the finished download (or find it in **My Files → Downloads**) and tap **Install**.
    - If the phone says it can't install apps from this source, tap **Settings**, turn on
      **Allow from this source**, and go back.
    - If Play Protect warns about an unknown app, tap **More details**, then **Install anyway**.
      The warning shows because the app isn't from the Play Store; it's your own app.
-4. Open **Task Widget** and tap **Allow calendar and notifications**. Allow both.
+3. Open **Task Widget** and tap **Allow calendar and notifications**. Allow both.
    The screen should say **Tracking tasks from** today's date.
-5. Long-press the home screen, tap **Widgets**, find **Task Widget**, and drag it onto the screen.
+4. Long-press the home screen, tap **Widgets**, find **Task Widget**, and drag it onto the screen.
 
 ## 2. Make test events (day 1)
 

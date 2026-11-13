@@ -20,7 +20,10 @@ The calendar icon opens the event in Google Calendar.
 
 To check everything works after installing, follow [TESTING.md](TESTING.md).
 
-1. Open the latest run under the Actions tab and download the `task-widget-debug-apk` artifact.
-2. Unzip, copy `app-debug.apk` to the phone, and install it (allow installs from your file manager if asked).
+1. On the phone, open https://github.com/hchakravarthy29-ops/task-widget/releases/latest/download/app-debug.apk
+   in Chrome. It downloads the newest build directly.
+2. Tap the download and install it (allow installs from Chrome if asked).
 3. Open the app once and allow calendar and notification access.
 4. Long-press the home screen, Widgets, Task Widget.
+
+To update later, open the same link and install over the top. Your settings are kept.

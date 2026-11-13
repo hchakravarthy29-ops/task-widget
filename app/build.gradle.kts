@@ -15,6 +15,17 @@ android {
         versionName = "0.1.0"
     }
 
+    // One fixed debug key (committed on purpose; it is not secret) so every CI build has the
+    // same signature and installs over the previous one instead of needing an uninstall.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
