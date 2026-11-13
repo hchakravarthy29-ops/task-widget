@@ -12,20 +12,15 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
-import androidx.glance.action.ActionParameters
-import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.LinearProgressIndicator
-import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -54,8 +49,6 @@ private val TRACK = Color(0xFF2A2C31)
 private val BLUE = Color(0xFF7FB0FF)
 private val RED = Color(0xFFE57373)
 private val AMBER = Color(0xFFFFB74D)
-
-val IdKey = ActionParameters.Key<Long>("eventId")
 
 private data class TData(
     val id: Long,
@@ -143,6 +136,12 @@ private fun TaskRow(context: Context, r: TData) {
         putExtra(ActionActivity.EXTRA_EVENT_ID, r.id)
         data = Uri.parse("taskwidget://task/${r.id}")
     }
+    // A separate data URI keeps this PendingIntent distinct from the text tap's.
+    val done = Intent(context, ActionActivity::class.java).apply {
+        putExtra(ActionActivity.EXTRA_EVENT_ID, r.id)
+        putExtra(ActionActivity.EXTRA_DONE_NOW, true)
+        data = Uri.parse("taskwidget://done/${r.id}")
+    }
     val view = Intent(Intent.ACTION_VIEW).apply {
         data = Uri.parse("content://com.android.calendar/events/${r.id}")
     }
@@ -155,7 +154,7 @@ private fun TaskRow(context: Context, r: TData) {
                 .size(24.dp)
                 .background(ColorProvider(r.dot))
                 .cornerRadius(12.dp)
-                .clickable(actionRunCallback<DoneAction>(actionParametersOf(IdKey to r.id))),
+                .clickable(actionStartActivity(done)),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -186,14 +185,6 @@ private fun TaskRow(context: Context, r: TData) {
             modifier = GlanceModifier.size(20.dp).clickable(actionStartActivity(view)),
             colorFilter = ColorFilter.tint(ColorProvider(MUTED))
         )
-    }
-}
-
-class DoneAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val id = parameters[IdKey] ?: return
-        withContext(Dispatchers.IO) { Repo.markDone(context, id) }
-        TaskWidget().updateAll(context)
     }
 }
 

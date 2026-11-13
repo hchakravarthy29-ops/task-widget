@@ -44,6 +44,14 @@ class TitlesTest {
     }
 
     @Test
+    fun toleratesEmojiVariationSelectorAndSandGlass() {
+        assertEquals(Parsed(Kind.DONE, 0, "Call bank"), Titles.parse("✅️ DONE – Call bank"))
+        assertEquals(Parsed(Kind.DELAYED, 2, "Call bank"), Titles.parse("⌛️ DELAYED +2 – Call bank"))
+        assertEquals(Parsed(Kind.DELAYED, 2, "Call bank"), Titles.parse("⏳ DELAYED +2 – Call bank"))
+        assertEquals(Parsed(Kind.FOLLOWUP, 0, "Report"), Titles.parse("🔁️ FOLLOW-UP – Report"))
+    }
+
+    @Test
     fun keywordsInsideTitleAreNotStatus() {
         assertEquals(Kind.NORMAL, Titles.parse("Get DONE – the thing").kind)
         assertEquals(Kind.NORMAL, Titles.parse("Report ✅ DONE – x").kind)

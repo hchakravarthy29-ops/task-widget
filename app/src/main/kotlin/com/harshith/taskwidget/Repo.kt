@@ -139,16 +139,28 @@ object Repo {
 
     // ----- actions -----
 
-    fun markDone(ctx: Context, id: Long, today: LocalDate = LocalDate.now(zone)): Boolean {
-        val item = getItem(ctx, id) ?: return false
-        if (item.recurring) return false
+    /**
+     * Marks the task done. Returns the task as it was before, for [undoDone], or null when nothing
+     * changed. The follow-up reminder is left alone so an undo keeps it; the caller cancels it.
+     */
+    fun markDone(ctx: Context, id: Long, today: LocalDate = LocalDate.now(zone)): Item? {
+        val item = getItem(ctx, id) ?: return null
+        if (item.recurring) return null
         val (title, end) = Rules.done(item, today)
         val v = ContentValues().apply {
             put(CalendarContract.Events.TITLE, title)
             if (end != null) put(CalendarContract.Events.DTEND, end)
         }
-        Reminders.cancel(ctx, id)
-        return update(ctx, id, v)
+        return if (update(ctx, id, v)) item else null
+    }
+
+    /** Puts back the title and end time from before [markDone]. */
+    fun undoDone(ctx: Context, before: Item): Boolean {
+        val v = ContentValues().apply {
+            put(CalendarContract.Events.TITLE, before.title)
+            put(CalendarContract.Events.DTEND, before.end)
+        }
+        return update(ctx, before.id, v)
     }
 
     /** Moves the block to a new date, and to a new time when [time] is given. Clears any status tag. */

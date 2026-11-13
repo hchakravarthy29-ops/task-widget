@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.widget.EditText
 import android.widget.Toast
@@ -12,6 +14,7 @@ import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -21,10 +24,17 @@ import java.time.temporal.TemporalAdjusters
 class ActionActivity : Activity() {
     companion object {
         const val EXTRA_EVENT_ID = "eventId"
+        /** true: mark done at once and offer Undo (the widget's circle). */
+        const val EXTRA_DONE_NOW = "doneNow"
+        private const val UNDO_WINDOW_MS = 6000L
     }
 
     private var eventId = -1L
     private var item: Item? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var undoDialog: AlertDialog? = null
+    /** Set while a done can still be undone; the follow-up reminder is cancelled once it can't. */
+    private var doneBefore: Item? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,10 +51,51 @@ class ActionActivity : Activity() {
             finish()
             return
         }
-        showMain(task)
+        if (intent.getBooleanExtra(EXTRA_DONE_NOW, false)) doneWithUndo() else showMain(task)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        undoDialog?.dismiss()
+        if (doneBefore != null) Reminders.cancel(applicationContext, eventId)
+        super.onDestroy()
     }
 
     private fun dialog() = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+
+    /** Marks done straight away, then shows a short-lived popup with Undo. */
+    private fun doneWithUndo() {
+        val app = applicationContext
+        CoroutineScope(Dispatchers.Main).launch {
+            val before = withContext(Dispatchers.IO) { Repo.markDone(app, eventId) }
+            TaskWidget().updateAll(app)
+            if (before == null) {
+                Toast.makeText(app, "Couldn't mark it done", Toast.LENGTH_SHORT).show()
+                finish()
+                return@launch
+            }
+            doneBefore = before
+            if (isFinishing || isDestroyed) return@launch
+            undoDialog = dialog()
+                .setTitle("Marked done")
+                .setMessage(before.parsed.base)
+                .setPositiveButton("Undo") { _, _ -> undo(before) }
+                .setNegativeButton("OK") { _, _ -> finish() }
+                .setOnCancelListener { finish() }
+                .show()
+            handler.postDelayed({ if (!isFinishing) finish() }, UNDO_WINDOW_MS)
+        }
+    }
+
+    private fun undo(before: Item) {
+        doneBefore = null
+        val app = applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            Repo.undoDone(app, before)
+            TaskWidget().updateAll(app)
+        }
+        finish()
+    }
 
     private fun showMain(task: Item) {
         val labels = arrayOf("Done", "Later today", "Reschedule", "Partly done")
@@ -52,7 +103,7 @@ class ActionActivity : Activity() {
             .setTitle(task.parsed.base)
             .setItems(labels) { _, which ->
                 when (which) {
-                    0 -> perform { Repo.markDone(this, eventId) }
+                    0 -> doneWithUndo()
                     1 -> laterToday()
                     2 -> reschedule()
                     3 -> partlyDone()

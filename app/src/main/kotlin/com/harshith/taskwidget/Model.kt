@@ -17,9 +17,11 @@ object Titles {
     const val FOLLOWUP_PREFIX = "🔁 FOLLOW-UP – "
     fun delayedPrefix(n: Int) = "⌛ DELAYED +$n – "
 
-    private val doneRe = Regex("^\\s*✅\\s*DONE\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
-    private val delayedRe = Regex("^\\s*⌛\\s*DELAYED\\s*\\+(\\d+)\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
-    private val followRe = Regex("^\\s*🔁\\s*FOLLOW-?UP\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+    // ️ is the invisible "show as emoji" mark some keyboards add after an emoji.
+    // ⏳ (sand flowing) is accepted as well as ⌛ because the two are easy to mix up.
+    private val doneRe = Regex("^\\s*✅\\uFE0F?\\s*DONE\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+    private val delayedRe = Regex("^\\s*[⌛⏳]\\uFE0F?\\s*DELAYED\\s*\\+(\\d+)\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+    private val followRe = Regex("^\\s*🔁\\uFE0F?\\s*FOLLOW-?UP\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
 
     fun parse(title: String): Parsed {
         doneRe.find(title)?.let { return Parsed(Kind.DONE, 0, title.substring(it.range.last + 1)) }

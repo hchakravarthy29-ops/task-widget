@@ -11,7 +11,7 @@ It reads and writes the phone's own calendar (no Google sign-in), so changes syn
 
 ## Actions (tap a task)
 
-Done, Later today, Reschedule (moves the block), Partly done. The circle on the left marks done in one tap.
+Done, Later today, Reschedule (moves the block), Partly done. The circle on the left marks done in one tap, with an Undo popup for a few seconds.
 The calendar icon opens the event in Google Calendar.
 
 ## Install
