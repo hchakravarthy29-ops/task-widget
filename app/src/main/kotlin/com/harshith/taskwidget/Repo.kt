@@ -8,9 +8,7 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.provider.CalendarContract
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneOffset
 import java.util.TimeZone
 
 data class Snapshot(
@@ -144,10 +142,10 @@ object Repo {
     fun markDone(ctx: Context, id: Long, today: LocalDate = LocalDate.now(zone)): Boolean {
         val item = getItem(ctx, id) ?: return false
         if (item.recurring) return false
-        val p = item.parsed
+        val (title, end) = Rules.done(item, today)
         val v = ContentValues().apply {
-            put(CalendarContract.Events.TITLE, Titles.build(Kind.DONE, 0, p.base))
-            if (item.endDay.isBefore(today)) put(CalendarContract.Events.DTEND, Rules.endThrough(item, today))
+            put(CalendarContract.Events.TITLE, title)
+            if (end != null) put(CalendarContract.Events.DTEND, end)
         }
         Reminders.cancel(ctx, id)
         return update(ctx, id, v)
@@ -161,24 +159,18 @@ object Repo {
         val v = ContentValues().apply {
             put(CalendarContract.Events.TITLE, p.base)
         }
-        val singleDay = item.startDay == item.endDay
-        if (item.allDay && time == null) {
-            val start = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            v.put(CalendarContract.Events.DTSTART, start)
-            v.put(CalendarContract.Events.DTEND, date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        } else {
-            val startTime = time ?: if (item.allDay) LocalTime.of(9, 0)
-            else java.time.Instant.ofEpochMilli(item.begin).atZone(zone).toLocalTime()
-            val begin = LocalDateTime.of(date, startTime).atZone(zone).toInstant().toEpochMilli()
-            val length = if (!item.allDay && singleDay) item.end - item.begin else 30 * 60 * 1000L
+        val slot = Rules.rescheduleSlot(item, date, time)
+        if (!slot.allDay) {
             v.put(CalendarContract.Events.ALL_DAY, 0)
             v.put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
-            v.put(CalendarContract.Events.DTSTART, begin)
-            v.put(CalendarContract.Events.DTEND, begin + maxOf(length, 15 * 60 * 1000L))
-            addAlertAtStart(ctx, id)
         }
+        v.put(CalendarContract.Events.DTSTART, slot.begin)
+        v.put(CalendarContract.Events.DTEND, slot.end)
         Reminders.cancel(ctx, id)
-        return update(ctx, id, v)
+        val ok = update(ctx, id, v)
+        // Only add the alert once the provider has accepted the (possibly all-day to timed) update.
+        if (ok && !slot.allDay) addAlertAtStart(ctx, id)
+        return ok
     }
 
     /** Marks the task as started but waiting, with an optional note and phone reminder. */

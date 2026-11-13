@@ -2,6 +2,8 @@ package com.harshith.taskwidget
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
@@ -74,9 +76,39 @@ object Rules {
             today.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         } else {
             val oldEnd = Instant.ofEpochMilli(item.end).atZone(zone).toLocalTime()
-            val candidate = today.atTime(oldEnd).atZone(zone).toInstant().toEpochMilli()
+            // An end at exactly midnight belongs to the previous day (see Item.endDay), so it must
+            // become the midnight after today, or the block would still look late and re-stretch.
+            val endAt = if (oldEnd == LocalTime.MIDNIGHT) today.plusDays(1).atStartOfDay(zone)
+            else today.atTime(oldEnd).atZone(zone)
+            val candidate = endAt.toInstant().toEpochMilli()
             if (candidate > item.begin) candidate else item.begin + 30 * 60 * 1000L
         }
+    }
+
+    /** The title and new end (null = keep) when the task is marked done on [today]. */
+    fun done(item: Item, today: LocalDate): Pair<String, Long?> {
+        val title = Titles.build(Kind.DONE, 0, item.parsed.base)
+        val end = if (item.endDay.isBefore(today)) endThrough(item, today) else null
+        return title to end
+    }
+
+    data class Slot(val begin: Long, val end: Long, val allDay: Boolean)
+
+    /** Where the block lands when moved to [date], and to [time] when given. */
+    fun rescheduleSlot(item: Item, date: LocalDate, time: LocalTime?): Slot {
+        if (item.allDay && time == null) {
+            return Slot(
+                date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+                date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+                allDay = true,
+            )
+        }
+        val singleDay = item.startDay == item.endDay
+        val startTime = time ?: if (item.allDay) LocalTime.of(9, 0)
+        else Instant.ofEpochMilli(item.begin).atZone(zone).toLocalTime()
+        val begin = LocalDateTime.of(date, startTime).atZone(zone).toInstant().toEpochMilli()
+        val length = if (!item.allDay && singleDay) item.end - item.begin else 30 * 60 * 1000L
+        return Slot(begin, begin + maxOf(length, 15 * 60 * 1000L), allDay = false)
     }
 
     /** The title and end time after the nightly stretch, or null when nothing changes. */
