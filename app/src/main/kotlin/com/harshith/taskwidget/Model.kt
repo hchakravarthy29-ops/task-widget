@@ -1,0 +1,123 @@
+package com.harshith.taskwidget
+
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
+
+enum class Kind { NORMAL, DONE, DELAYED, FOLLOWUP }
+
+data class Parsed(val kind: Kind, val delayDays: Int, val base: String)
+
+object Titles {
+    const val DONE_PREFIX = "✅ DONE – "
+    const val FOLLOWUP_PREFIX = "🔁 FOLLOW-UP – "
+    fun delayedPrefix(n: Int) = "⌛ DELAYED +$n – "
+
+    private val doneRe = Regex("^\\s*✅\\s*DONE\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+    private val delayedRe = Regex("^\\s*⌛\\s*DELAYED\\s*\\+(\\d+)\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+    private val followRe = Regex("^\\s*🔁\\s*FOLLOW-?UP\\s*[–—-]\\s*", RegexOption.IGNORE_CASE)
+
+    fun parse(title: String): Parsed {
+        doneRe.find(title)?.let { return Parsed(Kind.DONE, 0, title.substring(it.range.last + 1)) }
+        delayedRe.find(title)?.let {
+            val n = it.groupValues[1].toIntOrNull() ?: 1
+            return Parsed(Kind.DELAYED, n, title.substring(it.range.last + 1))
+        }
+        followRe.find(title)?.let { return Parsed(Kind.FOLLOWUP, 0, title.substring(it.range.last + 1)) }
+        return Parsed(Kind.NORMAL, 0, title)
+    }
+
+    fun build(kind: Kind, delayDays: Int, base: String): String = when (kind) {
+        Kind.NORMAL -> base
+        Kind.DONE -> DONE_PREFIX + base
+        Kind.DELAYED -> delayedPrefix(delayDays) + base
+        Kind.FOLLOWUP -> FOLLOWUP_PREFIX + base
+    }
+}
+
+val zone: ZoneId get() = ZoneId.systemDefault()
+
+data class Item(
+    val id: Long,
+    val title: String,
+    val begin: Long,
+    val end: Long,
+    val allDay: Boolean,
+    val color: Int,
+    val recurring: Boolean,
+    val description: String?,
+) {
+    val parsed: Parsed get() = Titles.parse(title)
+
+    private fun dayOf(millis: Long): LocalDate {
+        val z: ZoneId = if (allDay) ZoneOffset.UTC else zone
+        return Instant.ofEpochMilli(millis).atZone(z).toLocalDate()
+    }
+
+    val startDay: LocalDate get() = dayOf(begin)
+    val endDay: LocalDate get() = dayOf(maxOf(begin, end - 1))
+
+    val followNote: String?
+        get() {
+            val d = description ?: return null
+            val m = Regex("^Follow-up note: (.*)$", RegexOption.MULTILINE).find(d) ?: return null
+            return m.groupValues[1].trim().ifEmpty { null }
+        }
+}
+
+object Rules {
+    /** New end time (millis) that makes the block run through [today]. */
+    fun endThrough(item: Item, today: LocalDate): Long {
+        return if (item.allDay) {
+            today.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        } else {
+            val oldEnd = Instant.ofEpochMilli(item.end).atZone(zone).toLocalTime()
+            val candidate = today.atTime(oldEnd).atZone(zone).toInstant().toEpochMilli()
+            if (candidate > item.begin) candidate else item.begin + 30 * 60 * 1000L
+        }
+    }
+
+    /** The title and end time after the nightly stretch, or null when nothing changes. */
+    fun stretch(item: Item, today: LocalDate): Pair<String, Long>? {
+        if (item.recurring) return null
+        val p = item.parsed
+        if (p.kind == Kind.DONE) return null
+        val endDay = item.endDay
+        if (!endDay.isBefore(today)) return null
+        val late = ChronoUnit.DAYS.between(endDay, today).toInt()
+        val title = when (p.kind) {
+            Kind.NORMAL -> Titles.build(Kind.DELAYED, late, p.base)
+            Kind.DELAYED -> Titles.build(Kind.DELAYED, p.delayDays + late, p.base)
+            else -> item.title
+        }
+        return title to endThrough(item, today)
+    }
+
+    fun isActiveToday(item: Item, today: LocalDate): Boolean {
+        val k = item.parsed.kind
+        if (k == Kind.DONE) return false
+        return !item.startDay.isAfter(today) && !item.endDay.isBefore(today)
+    }
+
+    fun isDoneToday(item: Item, today: LocalDate): Boolean {
+        return item.parsed.kind == Kind.DONE && item.endDay == today
+    }
+
+    /** Delayed first (most late first), then today's tasks by time, then follow-ups. */
+    fun order(items: List<Item>): List<Item> {
+        fun rank(i: Item) = when (i.parsed.kind) {
+            Kind.DELAYED -> 0
+            Kind.NORMAL -> 1
+            Kind.FOLLOWUP -> 2
+            Kind.DONE -> 3
+        }
+        return items.sortedWith(
+            compareBy<Item> { rank(it) }
+                .thenByDescending { if (it.parsed.kind == Kind.DELAYED) it.parsed.delayDays else 0 }
+                .thenByDescending { it.allDay }
+                .thenBy { it.begin }
+        )
+    }
+}
