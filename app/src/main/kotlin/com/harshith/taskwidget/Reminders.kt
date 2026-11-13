@@ -25,14 +25,41 @@ object Reminders {
         )
     }
 
+    // Android drops all alarms on restart (and on app update), so each reminder is also saved
+    // here and set again by BootReceiver. Key "r<eventId>", value "<atMillis>\n<title>".
+    private const val STORE = "reminders"
+    private fun store(ctx: Context) = ctx.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+
     fun schedule(ctx: Context, id: Long, title: String, atMillis: Long) {
+        store(ctx).edit().putString("r$id", "$atMillis\n$title").apply()
+        setAlarm(ctx, id, title, atMillis)
+    }
+
+    private fun setAlarm(ctx: Context, id: Long, title: String, atMillis: Long) {
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pending(ctx, id, title))
     }
 
     fun cancel(ctx: Context, id: Long) {
+        forget(ctx, id)
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         am.cancel(pending(ctx, id, null))
+    }
+
+    fun forget(ctx: Context, id: Long) {
+        store(ctx).edit().remove("r$id").apply()
+    }
+
+    /** Sets every saved reminder again. Ones that came due while the phone was off fire now. */
+    fun restoreAll(ctx: Context) {
+        val now = System.currentTimeMillis()
+        for ((key, value) in store(ctx).all) {
+            val id = key.removePrefix("r").toLongOrNull() ?: continue
+            val parts = (value as? String)?.split("\n", limit = 2) ?: continue
+            val at = parts[0].toLongOrNull() ?: continue
+            val title = parts.getOrNull(1) ?: "A task needs a follow-up"
+            setAlarm(ctx, id, title, maxOf(at, now + 5_000L))
+        }
     }
 
     fun ensureChannel(ctx: Context) {
@@ -76,6 +103,23 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = Reminders.readId(intent)
         if (id < 0) return
+        Reminders.forget(context, id)
+        // Skip it if the task was finished or deleted elsewhere (Google Calendar, Claude in chat).
+        val item = try {
+            if (Repo.hasPermission(context)) Repo.getItem(context, id) else null
+        } catch (e: Exception) {
+            null
+        }
+        if (Repo.hasPermission(context) && (item == null || item.parsed.kind == Kind.DONE)) return
         Reminders.notify(context, id, Reminders.readTitle(intent))
+    }
+}
+
+/** Puts saved follow-up reminders back after a restart or an app update. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> Reminders.restoreAll(context)
+        }
     }
 }

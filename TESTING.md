@@ -57,6 +57,12 @@ Tick each one off, and note any that don't match.
       E now shows in amber as **Follow up · call back**, and its Google Calendar title starts with
       **🔁 FOLLOW-UP**. About 3 minutes later a **Follow up** notification arrives. Tapping it
       opens the action menu for E.
+- [ ] **Reminder survives a restart:** make one more event, **Test F**, today. Tap it, **Partly done**, **Next**, **Pick a date and time**, today,
+      5 minutes from now. Then restart the phone straight away. The **Follow up** notification
+      for F still arrives (within a few minutes of the time you picked).
+- [ ] **No reminder for finished tasks:** make **Test G** today, give it a Partly done reminder
+      5 minutes away, then mark G done with the circle and let the popup close. No notification
+      for G arrives.
 - [ ] **Open in Calendar:** tap the small calendar icon on any row. Google Calendar opens on that event.
 - [ ] **Repeating:** tap the circle, and then the name, of **Test Repeat**. Both times a message
       says repeating events can only be changed in Google Calendar, and nothing changes.
@@ -93,5 +99,5 @@ the event in Google Calendar if you can. "Step X didn't do Y, it did Z instead" 
 
 Known gaps you may notice:
 
-- A follow-up reminder is lost if the phone restarts before it's due.
+- Reminders can arrive a few minutes late; Android groups them to save battery.
 - The look is a placeholder; styling comes later.
