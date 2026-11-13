@@ -5,6 +5,7 @@ what you see matches this list. It takes about 15 minutes on day 1, then 2 minut
 the next two mornings (the "delayed" feature only shows up when a day passes).
 
 The app only touches events from the day you first open it. Older events are left alone.
+Meetings (events with other guests, or invitations from others) never show up and are never changed.
 
 ## 1. Install (once)
 
@@ -69,6 +70,9 @@ Tick each one off, and note any that don't match.
 - [ ] **Hand-typed status:** in Google Calendar, rename **B** to `✅ DONE – Test B` yourself
       (copy the tick from Test A). Open the app. B disappears from the widget and counts as done.
       Then rename it back to `Test B`.
+- [ ] **Meetings stay off:** make **Test Meeting** today and add a guest (any friend's email).
+      When Google asks about sending invitations, tap **Don't send**. Open the app.
+      Test Meeting does not appear on the widget, and neither do any real meetings you have today.
 - [ ] **Old events:** open any event from last week in Google Calendar. Its title and time are
       unchanged.
 
@@ -80,6 +84,7 @@ Open the Task Widget app once to refresh.
       yesterday through today, titled **⌛ DELAYED +1 – Test Late**.
 - [ ] **E** is still amber **Follow up**, *not* red delayed. In Google Calendar it stretches into today.
 - [ ] **A** (done yesterday) does not come back.
+- [ ] **Test Meeting** in Google Calendar is unchanged: same title, still only yesterday.
 - [ ] **D** shows today at its usual time, as a normal task.
 - [ ] Mark **E** done with the circle. It disappears; in Google Calendar its block ends today.
 

@@ -42,17 +42,64 @@ object Repo {
         CalendarContract.Instances.VISIBLE,         // 10
         CalendarContract.Instances.CALENDAR_ACCESS_LEVEL, // 11
         CalendarContract.Instances.SELF_ATTENDEE_STATUS,  // 12
+        CalendarContract.Instances.CALENDAR_ID,     // 13
+        CalendarContract.Instances.ORGANIZER,       // 14
     )
 
     private fun argb(color: Int): Int = color or (0xFF shl 24)
 
-    private fun readInstance(c: Cursor): Item? {
+    private class Row(val item: Item, val calendarId: Long, val organizer: String?)
+
+    /** Addresses that count as "you" for each calendar: its own address and the Google account. */
+    private fun selfAddresses(ctx: Context): Map<Long, Set<String>> {
+        val proj = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+        )
+        val out = HashMap<Long, Set<String>>()
+        ctx.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, proj, null, null, null)?.use { c ->
+            while (c.moveToNext()) out[c.getLong(0)] = setOfNotNull(c.getString(1), c.getString(2))
+        }
+        return out
+    }
+
+    private fun guestsByEvent(ctx: Context, eventIds: Collection<Long>): Map<Long, List<Guest>> {
+        if (eventIds.isEmpty()) return emptyMap()
+        val proj = arrayOf(
+            CalendarContract.Attendees.EVENT_ID,
+            CalendarContract.Attendees.ATTENDEE_EMAIL,
+            CalendarContract.Attendees.ATTENDEE_TYPE,
+        )
+        val out = HashMap<Long, MutableList<Guest>>()
+        for (chunk in eventIds.distinct().chunked(500)) {
+            val where = "${CalendarContract.Attendees.EVENT_ID} IN (${chunk.joinToString(",")})"
+            ctx.contentResolver.query(CalendarContract.Attendees.CONTENT_URI, proj, where, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val isRoom = !c.isNull(2) && c.getInt(2) == CalendarContract.Attendees.TYPE_RESOURCE
+                    out.getOrPut(c.getLong(0)) { ArrayList() }.add(Guest(c.getString(1), isRoom))
+                }
+            }
+        }
+        return out
+    }
+
+    /** Drops meetings with other people: the app never shows, renames or stretches them. */
+    private fun withoutMeetings(ctx: Context, rows: List<Row>): List<Item> {
+        val self = selfAddresses(ctx)
+        val guests = guestsByEvent(ctx, rows.map { it.item.id })
+        return rows.filterNot {
+            Rules.isMeeting(it.organizer, guests[it.item.id].orEmpty(), self[it.calendarId].orEmpty())
+        }.map { it.item }
+    }
+
+    private fun readInstance(c: Cursor): Row? {
         if (c.getInt(10) == 0) return null
         if (c.getInt(11) < MIN_OWNER_ACCESS) return null
         if (c.getInt(12) == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED) return null
         val eventColor = if (c.isNull(5)) 0 else c.getInt(5)
         val color = if (eventColor != 0) eventColor else c.getInt(6)
-        return Item(
+        val item = Item(
             id = c.getLong(0),
             title = c.getString(1) ?: "(no title)",
             begin = c.getLong(2),
@@ -62,6 +109,7 @@ object Repo {
             recurring = !c.getString(7).isNullOrEmpty() || !c.getString(8).isNullOrEmpty(),
             description = c.getString(9),
         )
+        return Row(item, c.getLong(13), c.getString(14))
     }
 
     private fun queryRange(ctx: Context, today: LocalDate): List<Item> {
@@ -71,11 +119,11 @@ object Repo {
             ContentUris.appendId(it, from)
             ContentUris.appendId(it, to)
         }.build()
-        val out = ArrayList<Item>()
+        val rows = ArrayList<Row>()
         ctx.contentResolver.query(uri, INSTANCE_PROJECTION, null, null, null)?.use { c ->
-            while (c.moveToNext()) readInstance(c)?.let { out.add(it) }
+            while (c.moveToNext()) readInstance(c)?.let { rows.add(it) }
         }
-        return out
+        return withoutMeetings(ctx, rows)
     }
 
     private fun update(ctx: Context, id: Long, values: ContentValues): Boolean {

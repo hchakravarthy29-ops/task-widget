@@ -71,7 +71,21 @@ data class Item(
         }
 }
 
+/** Someone on an event's guest list. Meeting rooms are resources, not people. */
+data class Guest(val email: String?, val isResource: Boolean = false)
+
 object Rules {
+    /**
+     * True for a meeting with other people: someone else organised it, or a guest other than
+     * you is invited. [self] holds the addresses that are you (calendar address, Google account).
+     */
+    fun isMeeting(organizer: String?, guests: List<Guest>, self: Set<String>): Boolean {
+        val me = self.map { it.trim().lowercase() }.toSet()
+        fun isMe(email: String?) = email.isNullOrBlank() || email.trim().lowercase() in me
+        if (!isMe(organizer)) return true
+        return guests.any { !it.isResource && !isMe(it.email) }
+    }
+
     /** New end time (millis) that makes the block run through [today]. */
     fun endThrough(item: Item, today: LocalDate): Long {
         return if (item.allDay) {
