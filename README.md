@@ -19,6 +19,7 @@ The calendar icon opens the event in Google Calendar.
 ## Install
 
 To check everything works after installing, follow [TESTING.md](TESTING.md).
+New collaborator? Start with [BRIEF.md](BRIEF.md).
 
 1. On the phone, open https://github.com/hchakravarthy29-ops/task-widget/releases/latest/download/app-debug.apk
    in Chrome. It downloads the newest build directly.
