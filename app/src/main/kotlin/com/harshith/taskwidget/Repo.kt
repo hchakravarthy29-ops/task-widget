@@ -225,13 +225,15 @@ object Repo {
         return update(ctx, before.id, v)
     }
 
-    /** Moves the block to a new date, and to a new time when [time] is given. Clears any status tag. */
-    fun reschedule(ctx: Context, id: Long, date: LocalDate, time: LocalTime?): Boolean {
+    /**
+     * Moves the block to a new date, and to a new time when [time] is given. Reschedule clears any
+     * status tag and follow-up reminder; Later today ([keepStatus]) keeps both.
+     */
+    fun reschedule(ctx: Context, id: Long, date: LocalDate, time: LocalTime?, keepStatus: Boolean = false): Boolean {
         val item = getItem(ctx, id) ?: return false
         if (item.recurring) return false
-        val p = item.parsed
         val v = ContentValues().apply {
-            put(CalendarContract.Events.TITLE, p.base)
+            put(CalendarContract.Events.TITLE, Rules.movedTitle(item, keepStatus))
         }
         val slot = Rules.rescheduleSlot(item, date, time)
         val toTimed = item.allDay && !slot.allDay
@@ -243,7 +245,7 @@ object Repo {
         v.put(CalendarContract.Events.DTSTART, slot.begin)
         v.put(CalendarContract.Events.DTEND, slot.end)
         val ok = update(ctx, id, v)
-        if (ok) Reminders.cancel(ctx, id)
+        if (ok && !keepStatus) Reminders.cancel(ctx, id)
         // A timed event already has the user's own alerts; only a converted all-day one gets one,
         // and only once the provider has accepted the update.
         if (ok && toTimed) addAlertAtStart(ctx, id)

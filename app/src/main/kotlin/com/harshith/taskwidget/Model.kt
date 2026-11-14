@@ -111,22 +111,42 @@ object Rules {
 
     data class Slot(val begin: Long, val end: Long, val allDay: Boolean)
 
-    /** Where the block lands when moved to [date], and to [time] when given. */
+    /**
+     * A block made longer by the app (delayed or follow-up carry-over), not by the user.
+     * Its extra days aren't part of the task, so moving it uses one day's worth.
+     */
+    private fun isStretched(item: Item) =
+        item.parsed.kind == Kind.DELAYED || item.parsed.kind == Kind.FOLLOWUP
+
+    /**
+     * The title after a move. Reschedule clears any status tag; Later today ([keepStatus]) keeps
+     * a delayed or follow-up tag, so the task stays delayed or a follow-up.
+     */
+    fun movedTitle(item: Item, keepStatus: Boolean): String {
+        val p = item.parsed
+        return if (keepStatus && (p.kind == Kind.DELAYED || p.kind == Kind.FOLLOWUP)) item.title else p.base
+    }
+
+    /**
+     * Where the block lands when moved to [date], and to [time] when given. A task the user made
+     * several days long keeps all its days; a stretched one moves as a single day.
+     */
     fun rescheduleSlot(item: Item, date: LocalDate, time: LocalTime?): Slot {
+        val singleDay = item.startDay == item.endDay
         if (item.allDay && time == null) {
+            val days = if (isStretched(item)) 1L else ChronoUnit.DAYS.between(item.startDay, item.endDay) + 1
             return Slot(
                 date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
-                date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+                date.plusDays(days).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
                 allDay = true,
             )
         }
-        val singleDay = item.startDay == item.endDay
         val startTime = time ?: if (item.allDay) LocalTime.of(9, 0)
         else Instant.ofEpochMilli(item.begin).atZone(zone).toLocalTime()
         val begin = LocalDateTime.of(date, startTime).atZone(zone).toInstant().toEpochMilli()
         val length = when {
             item.allDay -> 30 * 60 * 1000L
-            singleDay -> item.end - item.begin
+            singleDay || !isStretched(item) -> item.end - item.begin
             else -> {
                 // A stretched (delayed or follow-up) block: keep the task's length within a day,
                 // e.g. 10:00-11:00 stretched over three days moves as one hour.

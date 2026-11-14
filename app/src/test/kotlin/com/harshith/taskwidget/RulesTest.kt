@@ -249,7 +249,7 @@ class RulesTest {
     @Test
     fun rescheduleStretchedBlockEndingBeforeStartTimeUsesHalfHour() {
         // 22:00 start stretched to an 09:00 end: no sensible same-day length, so 30 minutes.
-        val item = timed("Odd", LocalDateTime.of(2026, 11, 12, 22, 0), LocalDateTime.of(2026, 11, 14, 9, 0))
+        val item = timed("⌛ DELAYED +1 – Odd", LocalDateTime.of(2026, 11, 12, 22, 0), LocalDateTime.of(2026, 11, 14, 9, 0))
         val slot = Rules.rescheduleSlot(item, LocalDate.of(2026, 11, 15), null)
         assertEquals(30 * 60 * 1000L, slot.end - slot.begin)
     }
@@ -323,6 +323,54 @@ class RulesTest {
         val moved = item.copy(title = item.parsed.base, begin = slot.begin, end = slot.end)
         assertNull(Rules.stretch(moved, today))
         assertFalse(Rules.isActiveToday(moved, today))
+    }
+
+    @Test
+    fun rescheduleMultiDayAllDayTaskKeepsAllItsDays() {
+        val trip = allDay("Trip prep", LocalDate.of(2026, 11, 14), LocalDate.of(2026, 11, 16))
+        val slot = Rules.rescheduleSlot(trip, LocalDate.of(2026, 11, 20), null)
+        assertTrue(slot.allDay)
+        assertEquals(utcMidnight(LocalDate.of(2026, 11, 20)), slot.begin)
+        assertEquals("three days: 20th to 22nd", utcMidnight(LocalDate.of(2026, 11, 23)), slot.end)
+    }
+
+    @Test
+    fun rescheduleStretchedAllDayTaskMovesAsOneDay() {
+        // Delayed from the 12th: the extra days came from the stretch, not the task.
+        val late = allDay("⌛ DELAYED +2 – Groceries", LocalDate.of(2026, 11, 12), LocalDate.of(2026, 11, 14))
+        val slot = Rules.rescheduleSlot(late, LocalDate.of(2026, 11, 20), null)
+        assertEquals(utcMidnight(LocalDate.of(2026, 11, 21)), slot.end)
+    }
+
+    @Test
+    fun rescheduleMultiDayTimedTaskKeepsFullLength() {
+        val item = timed("Hackathon", LocalDateTime.of(2026, 11, 14, 9, 0), LocalDateTime.of(2026, 11, 15, 17, 0))
+        val slot = Rules.rescheduleSlot(item, LocalDate.of(2026, 11, 21), null)
+        assertEquals(LocalDateTime.of(2026, 11, 21, 9, 0), local(slot.begin))
+        assertEquals(LocalDateTime.of(2026, 11, 22, 17, 0), local(slot.end))
+    }
+
+    @Test
+    fun laterTodayKeepsTagButRescheduleClearsIt() {
+        val at = { h: Int -> LocalDateTime.of(2026, 11, 14, h, 0) }
+        val delayed = timed("⌛ DELAYED +2 – Call bank", at(10), at(11))
+        val follow = timed("🔁 FOLLOW-UP – Report", at(10), at(11))
+        assertEquals("⌛ DELAYED +2 – Call bank", Rules.movedTitle(delayed, keepStatus = true))
+        assertEquals("🔁 FOLLOW-UP – Report", Rules.movedTitle(follow, keepStatus = true))
+        assertEquals("Call bank", Rules.movedTitle(delayed, keepStatus = false))
+        assertEquals("Report", Rules.movedTitle(follow, keepStatus = false))
+        assertEquals("Plain", Rules.movedTitle(timed("Plain", at(10), at(11)), keepStatus = true))
+    }
+
+    @Test
+    fun delayedTaskSnoozedLaterTodayKeepsCountingNextDay() {
+        // Delayed +2 task, moved to 3 PM today with Later today; not done by tomorrow.
+        val late = timed("⌛ DELAYED +2 – Call bank", LocalDateTime.of(2026, 11, 12, 10, 0), LocalDateTime.of(2026, 11, 14, 11, 0))
+        val slot = Rules.rescheduleSlot(late, today, LocalTime.of(15, 0))
+        val snoozed = late.copy(title = Rules.movedTitle(late, keepStatus = true), begin = slot.begin, end = slot.end)
+        assertTrue(Rules.isActiveToday(snoozed, today))
+        assertNull(Rules.stretch(snoozed, today))
+        assertEquals("⌛ DELAYED +3 – Call bank", snoozed.after(Rules.stretch(snoozed, today.plusDays(1))).title)
     }
 
     @Test

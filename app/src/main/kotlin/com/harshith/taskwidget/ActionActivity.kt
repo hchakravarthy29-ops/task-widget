@@ -161,8 +161,8 @@ class ActionActivity : Activity() {
         ).filter { (_, t) -> t.toLocalDate() == today && t.isAfter(now) }
         val labels = (options.map { it.first } + "Pick a time…").toTypedArray()
         dialog().setTitle("Later today").setItems(labels) { _, which ->
-            if (which < options.size) moveTo(today, options[which].second.toLocalTime())
-            else pickTime { t -> moveTo(today, t) }
+            if (which < options.size) moveTo(today, options[which].second.toLocalTime(), keepStatus = true)
+            else pickTime { t -> moveTo(today, t, keepStatus = true) }
         }.setOnCancelListener { finish() }.show()
     }
 
@@ -186,8 +186,8 @@ class ActionActivity : Activity() {
         }.setOnCancelListener { finish() }.show()
     }
 
-    private fun moveTo(date: LocalDate, time: LocalTime?) {
-        perform { app -> Repo.reschedule(app, eventId, date, time) }
+    private fun moveTo(date: LocalDate, time: LocalTime?, keepStatus: Boolean = false) {
+        perform { app -> Repo.reschedule(app, eventId, date, time, keepStatus) }
     }
 
     private fun partlyDone() {

@@ -74,11 +74,10 @@ Stack: AGP 8.5.2, Kotlin 1.9.24, Compose compiler 1.5.14, compileSdk and targetS
 4. Reminders after a reboot (`BootReceiver`), and how late `setAndAllowWhileIdle` fires on Samsung.
 5. The "Open in Google Calendar" intent (`content://com.android.calendar/events/<id>`).
 
-## Open questions for Harshith (asked after the subagent review)
+## Questions answered by Harshith (after the subagent review)
 
-1. "Later today" on a delayed or follow-up task currently makes it a normal task (tag removed,
-   follow-up reminder cancelled, old note left in the description). Keep that, or keep the tag?
-2. Reschedule of a multi-day all-day block (e.g. a 3-day trip prep) collapses it to one day. OK?
+1. Answered: "Later today" keeps a delayed or follow-up tag and reminder; Reschedule clears them.
+2. Answered: moving a multi-day task keeps all its days (stretched delayed/follow-up blocks move as one day).
 
 ## Small known rough edges (not fixed)
 
