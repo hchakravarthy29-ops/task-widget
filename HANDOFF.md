@@ -78,6 +78,13 @@ Stack: AGP 8.5.2, Kotlin 1.9.24, Compose compiler 1.5.14, compileSdk and targetS
 
 1. Answered: "Later today" keeps a delayed or follow-up tag and reminder; Reschedule clears them.
 2. Answered: moving a multi-day task keeps all its days (stretched delayed/follow-up blocks move as one day).
+3. Answered (15 Nov): keep using every owned calendar, including the shared WJC Deadlines calendar (team sees the tags).
+
+## Incident 15 Nov: runaway DELAYED count (fixed in 3e0313f)
+A late all-day WJC event went to "DELAYED +33" within minutes on the phone: each refresh re-stretched it
+because Instances lagged the Events table after our write. Same lag made the widget need repeated refreshes
+after Done, Later today and Reschedule. Fix: one-off events read title and times from Events, `sync` re-reads
+before writing, stretches each event at most once per day, and is synchronized. The event was restored by hand.
 
 ## Small known rough edges (not fixed)
 
