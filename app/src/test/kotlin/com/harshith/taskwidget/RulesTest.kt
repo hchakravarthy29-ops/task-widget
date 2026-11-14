@@ -232,6 +232,29 @@ class RulesTest {
     }
 
     @Test
+    fun doneEarlyOnMultiDayBlockEndsItToday() {
+        // A Fri-to-Mon block finished on Sat must end today and count as done today.
+        val item = timed("Move house", LocalDateTime.of(2026, 11, 13, 10, 0), LocalDateTime.of(2026, 11, 16, 12, 0))
+        val (title, end) = Rules.done(item, today)
+        assertEquals(LocalDateTime.of(2026, 11, 14, 12, 0), local(end!!))
+        val done = item.copy(title = title, end = end)
+        assertTrue(Rules.isDoneToday(done, today))
+        assertFalse(Rules.isActiveToday(done, today))
+
+        val trip = allDay("Trip prep", LocalDate.of(2026, 11, 13), LocalDate.of(2026, 11, 16))
+        val (_, tripEnd) = Rules.done(trip, today)
+        assertEquals(utcMidnight(LocalDate.of(2026, 11, 15)), tripEnd)
+    }
+
+    @Test
+    fun rescheduleStretchedBlockEndingBeforeStartTimeUsesHalfHour() {
+        // 22:00 start stretched to an 09:00 end: no sensible same-day length, so 30 minutes.
+        val item = timed("Odd", LocalDateTime.of(2026, 11, 12, 22, 0), LocalDateTime.of(2026, 11, 14, 9, 0))
+        val slot = Rules.rescheduleSlot(item, LocalDate.of(2026, 11, 15), null)
+        assertEquals(30 * 60 * 1000L, slot.end - slot.begin)
+    }
+
+    @Test
     fun doneYesterdayIsNotCountedToday() {
         val item = timed("✅ DONE – Call bank", LocalDateTime.of(2026, 11, 13, 10, 0), LocalDateTime.of(2026, 11, 13, 11, 0))
         assertFalse(Rules.isDoneToday(item, today))
@@ -295,7 +318,7 @@ class RulesTest {
         val item = timed("⌛ DELAYED +2 – Call bank", LocalDateTime.of(2026, 11, 12, 10, 0), LocalDateTime.of(2026, 11, 14, 11, 0))
         val slot = Rules.rescheduleSlot(item, LocalDate.of(2026, 11, 15), null)
         assertEquals(LocalDateTime.of(2026, 11, 15, 10, 0), local(slot.begin))
-        assertEquals(LocalDateTime.of(2026, 11, 15, 10, 30), local(slot.end))
+        assertEquals("keeps its one-hour length", LocalDateTime.of(2026, 11, 15, 11, 0), local(slot.end))
         assertEquals("Call bank", item.parsed.base) // Repo.reschedule writes the base title
         val moved = item.copy(title = item.parsed.base, begin = slot.begin, end = slot.end)
         assertNull(Rules.stretch(moved, today))

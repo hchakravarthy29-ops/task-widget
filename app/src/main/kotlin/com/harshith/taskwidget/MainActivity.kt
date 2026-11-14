@@ -73,11 +73,15 @@ class MainActivity : Activity() {
         status.text = "Reading your calendar…"
         val app = applicationContext
         CoroutineScope(Dispatchers.Main).launch {
-            val (snap, since) = withContext(Dispatchers.IO) {
-                Repo.sync(app)
-                Repo.load(app) to Repo.trackingSince(app)
+            val (snap, since) = try {
+                withContext(Dispatchers.IO) {
+                    Repo.sync(app)
+                    Repo.load(app) to Repo.trackingSince(app)
+                }.also { refreshWidgets(app) }
+            } catch (e: Exception) {
+                status.text = "Couldn't read your calendar. Check calendar access and try Refresh."
+                return@launch
             }
-            refreshWidgets(app)
             status.text = "${snap.done} of ${snap.total} done today. Tracking tasks from $since; older events are left as they are. " +
                 "Add the widget from your home screen: long-press, Widgets, Task Widget."
             list.text = snap.active.joinToString("\n\n") { i ->

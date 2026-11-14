@@ -104,7 +104,8 @@ object Rules {
     /** The title and new end (null = keep) when the task is marked done on [today]. */
     fun done(item: Item, today: LocalDate): Pair<String, Long?> {
         val title = Titles.build(Kind.DONE, 0, item.parsed.base)
-        val end = if (item.endDay.isBefore(today)) endThrough(item, today) else null
+        // Done ends the block on the completion day, whether it was late or still running ahead.
+        val end = if (item.endDay != today) endThrough(item, today) else null
         return title to end
     }
 
@@ -123,7 +124,18 @@ object Rules {
         val startTime = time ?: if (item.allDay) LocalTime.of(9, 0)
         else Instant.ofEpochMilli(item.begin).atZone(zone).toLocalTime()
         val begin = LocalDateTime.of(date, startTime).atZone(zone).toInstant().toEpochMilli()
-        val length = if (!item.allDay && singleDay) item.end - item.begin else 30 * 60 * 1000L
+        val length = when {
+            item.allDay -> 30 * 60 * 1000L
+            singleDay -> item.end - item.begin
+            else -> {
+                // A stretched (delayed or follow-up) block: keep the task's length within a day,
+                // e.g. 10:00-11:00 stretched over three days moves as one hour.
+                val s = Instant.ofEpochMilli(item.begin).atZone(zone).toLocalTime()
+                val e = Instant.ofEpochMilli(item.end).atZone(zone).toLocalTime()
+                val diff = java.time.Duration.between(s, e).toMillis()
+                if (diff > 0) diff else 30 * 60 * 1000L
+            }
+        }
         return Slot(begin, begin + maxOf(length, 15 * 60 * 1000L), allDay = false)
     }
 

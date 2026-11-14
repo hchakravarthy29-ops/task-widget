@@ -8,6 +8,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 object Reminders {
     const val CHANNEL_ID = "followups"
@@ -104,14 +107,28 @@ class ReminderReceiver : BroadcastReceiver() {
         val id = Reminders.readId(intent)
         if (id < 0) return
         Reminders.forget(context, id)
-        // Skip it if the task was finished or deleted elsewhere (Google Calendar, Claude in chat).
-        val item = try {
-            if (Repo.hasPermission(context)) Repo.getItem(context, id) else null
-        } catch (e: Exception) {
-            null
+        val title = Reminders.readTitle(intent)
+        val pending = goAsync()
+        // The calendar lookup runs off the main thread so a cold provider can't stall the receiver.
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Skip it if the task was finished or deleted elsewhere (Google Calendar, Claude in chat).
+                // If the lookup itself fails, remind anyway: a spare reminder beats a lost one.
+                val skip = try {
+                    if (Repo.hasPermission(context)) {
+                        val item = Repo.getItem(context, id)
+                        item == null || item.parsed.kind == Kind.DONE
+                    } else {
+                        false
+                    }
+                } catch (e: Exception) {
+                    false
+                }
+                if (!skip) Reminders.notify(context, id, title)
+            } finally {
+                pending.finish()
+            }
         }
-        if (Repo.hasPermission(context) && (item == null || item.parsed.kind == Kind.DONE)) return
-        Reminders.notify(context, id, Reminders.readTitle(intent))
     }
 }
 

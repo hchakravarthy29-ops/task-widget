@@ -56,10 +56,11 @@ object Repo {
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.OWNER_ACCOUNT,
             CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.NAME, // a secondary Google calendar's own address
         )
         val out = HashMap<Long, Set<String>>()
         ctx.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, proj, null, null, null)?.use { c ->
-            while (c.moveToNext()) out[c.getLong(0)] = setOfNotNull(c.getString(1), c.getString(2))
+            while (c.moveToNext()) out[c.getLong(0)] = setOfNotNull(c.getString(1), c.getString(2), c.getString(3))
         }
         return out
     }
@@ -214,11 +215,12 @@ object Repo {
         return if (update(ctx, id, v)) item else null
     }
 
-    /** Puts back the title and end time from before [markDone]. */
+    /** Puts back the title, and the end time only if [markDone] changed it. */
     fun undoDone(ctx: Context, before: Item): Boolean {
+        val now = getItem(ctx, before.id)
         val v = ContentValues().apply {
             put(CalendarContract.Events.TITLE, before.title)
-            put(CalendarContract.Events.DTEND, before.end)
+            if (now != null && now.end != before.end) put(CalendarContract.Events.DTEND, before.end)
         }
         return update(ctx, before.id, v)
     }
@@ -232,16 +234,19 @@ object Repo {
             put(CalendarContract.Events.TITLE, p.base)
         }
         val slot = Rules.rescheduleSlot(item, date, time)
-        if (!slot.allDay) {
+        val toTimed = item.allDay && !slot.allDay
+        if (toTimed) {
+            // Only when an all-day event becomes timed; a timed event keeps its own time zone.
             v.put(CalendarContract.Events.ALL_DAY, 0)
             v.put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
         }
         v.put(CalendarContract.Events.DTSTART, slot.begin)
         v.put(CalendarContract.Events.DTEND, slot.end)
-        Reminders.cancel(ctx, id)
         val ok = update(ctx, id, v)
-        // Only add the alert once the provider has accepted the (possibly all-day to timed) update.
-        if (ok && !slot.allDay) addAlertAtStart(ctx, id)
+        if (ok) Reminders.cancel(ctx, id)
+        // A timed event already has the user's own alerts; only a converted all-day one gets one,
+        // and only once the provider has accepted the update.
+        if (ok && toTimed) addAlertAtStart(ctx, id)
         return ok
     }
 

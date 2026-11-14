@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -76,8 +77,11 @@ class ActionActivity : Activity() {
     private fun doneWithUndo() {
         val app = applicationContext
         CoroutineScope(Dispatchers.Main).launch {
-            val before = withContext(Dispatchers.IO) { Repo.markDone(app, eventId) }
-            refreshWidgets(app)
+            val before = try {
+                withContext(Dispatchers.IO) { Repo.markDone(app, eventId) }.also { refreshWidgets(app) }
+            } catch (e: Exception) {
+                null
+            }
             if (before == null) {
                 Toast.makeText(app, "Couldn't mark it done", Toast.LENGTH_SHORT).show()
                 finish()
@@ -99,14 +103,31 @@ class ActionActivity : Activity() {
     private fun undo(before: Item) {
         doneBefore = null
         val app = applicationContext
-        CoroutineScope(Dispatchers.IO).launch {
-            Repo.undoDone(app, before)
-            refreshWidgets(app)
-        }
+        runSafely(app) { Repo.undoDone(app, before) }
         finish()
     }
 
+    /** Runs a calendar change off the main thread, refreshes the widget, and never crashes the app. */
+    private fun runSafely(app: Context, block: () -> Unit) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                block()
+                refreshWidgets(app)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(app, "Couldn't update the calendar", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private fun showMain(task: Item) {
+        if (task.parsed.kind == Kind.DONE) {
+            // A stale tap from a widget that hadn't redrawn yet.
+            Toast.makeText(this, "Already marked done", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
         val labels = arrayOf("Done", "Later today", "Reschedule", "Partly done")
         dialog()
             .setTitle(task.parsed.base)
@@ -122,25 +143,26 @@ class ActionActivity : Activity() {
             .show()
     }
 
-    private fun perform(block: () -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            block()
-            refreshWidgets(applicationContext)
-        }
+    /** Uses the application context: the activity finishes before the work completes. */
+    private fun perform(block: (Context) -> Unit) {
+        val app = applicationContext
+        runSafely(app) { block(app) }
         finish()
     }
 
     private fun laterToday() {
-        val labels = arrayOf("In 1 hour", "In 3 hours", "This evening (6 PM)", "Pick a time…")
+        val now = LocalDateTime.now().withSecond(0).withNano(0)
+        val today = now.toLocalDate()
+        // Only offer choices that still land today (late at night "in 3 hours" would be tomorrow).
+        val options = listOf(
+            "In 1 hour" to now.plusHours(1),
+            "In 3 hours" to now.plusHours(3),
+            "This evening (6 PM)" to today.atTime(18, 0),
+        ).filter { (_, t) -> t.toLocalDate() == today && t.isAfter(now) }
+        val labels = (options.map { it.first } + "Pick a time…").toTypedArray()
         dialog().setTitle("Later today").setItems(labels) { _, which ->
-            val now = LocalDateTime.now()
-            val today = LocalDate.now()
-            when (which) {
-                0 -> moveTo(today, now.plusHours(1).toLocalTime().withSecond(0).withNano(0))
-                1 -> moveTo(today, now.plusHours(3).toLocalTime().withSecond(0).withNano(0))
-                2 -> moveTo(today, LocalTime.of(18, 0))
-                else -> pickTime { t -> moveTo(today, t) }
-            }
+            if (which < options.size) moveTo(today, options[which].second.toLocalTime())
+            else pickTime { t -> moveTo(today, t) }
         }.setOnCancelListener { finish() }.show()
     }
 
@@ -165,7 +187,7 @@ class ActionActivity : Activity() {
     }
 
     private fun moveTo(date: LocalDate, time: LocalTime?) {
-        perform { Repo.reschedule(this, eventId, date, time) }
+        perform { app -> Repo.reschedule(app, eventId, date, time) }
     }
 
     private fun partlyDone() {
@@ -197,7 +219,7 @@ class ActionActivity : Activity() {
 
     private fun savePartly(note: String, at: LocalDateTime?) {
         val millis = at?.atZone(zone)?.toInstant()?.toEpochMilli()
-        perform { Repo.partlyDone(this, eventId, note, millis) }
+        perform { app -> Repo.partlyDone(app, eventId, note, millis) }
     }
 
     private fun pickDate(done: (LocalDate) -> Unit) {
@@ -205,6 +227,8 @@ class ActionActivity : Activity() {
         DatePickerDialog(this, android.R.style.Theme_Material_Dialog, { _, y, m, d ->
             done(LocalDate.of(y, m + 1, d))
         }, t.year, t.monthValue - 1, t.dayOfMonth).also {
+            // No past dates: a task moved into the past would come straight back as delayed.
+            it.datePicker.minDate = System.currentTimeMillis() - 1000
             it.setOnCancelListener { finish() }
         }.show()
     }
