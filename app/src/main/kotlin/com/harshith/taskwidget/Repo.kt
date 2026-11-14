@@ -124,7 +124,48 @@ object Repo {
         ctx.contentResolver.query(uri, INSTANCE_PROJECTION, null, null, null)?.use { c ->
             while (c.moveToNext()) readInstance(c)?.let { rows.add(it) }
         }
-        return withoutMeetings(ctx, rows)
+        return withoutMeetings(ctx, withEventTimes(ctx, rows))
+    }
+
+    /**
+     * Replaces each one-off event's title and times with the Events table's own values.
+     * The Instances table can lag behind our writes; reading a stale end there made the
+     * stretch run again on every refresh (one event reached DELAYED +33 in minutes).
+     */
+    private fun withEventTimes(ctx: Context, rows: List<Row>): List<Row> {
+        val ids = rows.filter { !it.item.recurring }.map { it.item.id }.distinct()
+        if (ids.isEmpty()) return rows
+        val proj = arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.DTEND,
+            CalendarContract.Events.ALL_DAY,
+        )
+        class Times(val title: String?, val begin: Long, val end: Long?, val allDay: Boolean)
+        val fresh = HashMap<Long, Times>()
+        for (chunk in ids.chunked(500)) {
+            val where = "${CalendarContract.Events._ID} IN (${chunk.joinToString(",")})"
+            ctx.contentResolver.query(CalendarContract.Events.CONTENT_URI, proj, where, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.isNull(2)) continue
+                    fresh[c.getLong(0)] = Times(
+                        c.getString(1), c.getLong(2), if (c.isNull(3)) null else c.getLong(3), c.getInt(4) == 1,
+                    )
+                }
+            }
+        }
+        return rows.map { row ->
+            val t = fresh[row.item.id] ?: return@map row
+            if (row.item.recurring) return@map row
+            val item = row.item.copy(
+                title = t.title ?: row.item.title,
+                begin = t.begin,
+                end = t.end ?: row.item.end,
+                allDay = t.allDay,
+            )
+            Row(item, row.calendarId, row.organizer)
+        }
     }
 
     private fun update(ctx: Context, id: Long, values: ContentValues): Boolean {
@@ -175,17 +216,34 @@ object Repo {
         return LocalDate.ofEpochDay(prefs.getLong(KEY_SINCE, today.toEpochDay()))
     }
 
-    /** Stretches every undone, past-due task through today and marks it delayed. */
+    private const val STRETCHED = "stretched_on"
+
+    /**
+     * Stretches every undone, past-due task through today and marks it delayed.
+     * Each event is stretched at most once per day (remembered here), so even if the calendar
+     * reports an out-of-date end time, the delay can only grow by one step a day.
+     */
+    @Synchronized // the app screen and the widget can refresh at the same moment
     fun sync(ctx: Context, today: LocalDate = LocalDate.now(zone)) {
         if (!hasPermission(ctx)) return
         val since = trackingSince(ctx, today)
-        for (item in queryRange(ctx, today)) {
+        val done =ctx.getSharedPreferences(STRETCHED, Context.MODE_PRIVATE)
+        val day = today.toEpochDay()
+        // Forget days before today so the store stays small.
+        done.all.filter { (it.value as? Long ?: 0L) < day }.keys.let { old ->
+            if (old.isNotEmpty()) done.edit().apply { old.forEach { remove(it) } }.apply()
+        }
+        for (listed in queryRange(ctx, today)) {
+            if (done.getLong("e${listed.id}", -1L) == day) continue
+            if (Rules.stretch(listed, today, since) == null) continue
+            // Decide from the event as it is right now, not from the list we read a moment ago.
+            val item = getItem(ctx, listed.id) ?: continue
             val change = Rules.stretch(item, today, since) ?: continue
             val v = ContentValues().apply {
                 put(CalendarContract.Events.TITLE, change.first)
                 put(CalendarContract.Events.DTEND, change.second)
             }
-            update(ctx, item.id, v)
+            if (update(ctx, item.id, v)) done.edit().putLong("e${item.id}", day).commit()
         }
     }
 
